@@ -13,7 +13,7 @@ import (
 	. "github.com/paketo-buildpacks/occam/matchers"
 )
 
-func testProcfile(t *testing.T, context spec.G, it spec.S) {
+func testJavaNativeImage(t *testing.T, context spec.G, it spec.S) {
 	var (
 		Expect     = NewWithT(t).Expect
 		Eventually = NewWithT(t).Eventually
@@ -27,7 +27,7 @@ func testProcfile(t *testing.T, context spec.G, it spec.S) {
 		docker = occam.NewDocker()
 	})
 
-	context("procfile buildpack specified at build time", func() {
+	context("detects a Java Native Image app", func() {
 		var (
 			image     occam.Image
 			container occam.Container
@@ -40,9 +40,6 @@ func testProcfile(t *testing.T, context spec.G, it spec.S) {
 			var err error
 			name, err = occam.RandomName()
 			Expect(err).NotTo(HaveOccurred())
-
-			source, err = occam.Source(filepath.Join("testdata", "procfile"))
-			Expect(err).NotTo(HaveOccurred())
 		})
 
 		it.After(func() {
@@ -52,15 +49,16 @@ func testProcfile(t *testing.T, context spec.G, it spec.S) {
 			Expect(os.RemoveAll(source)).To(Succeed())
 		})
 
-		it("builds Procfile app successfully", func() {
+		it("builds successfully", func() {
 			var err error
+			source, err = occam.Source(filepath.Join("testdata", "java-native-image"))
+			Expect(err).NotTo(HaveOccurred())
+
 			var logs fmt.Stringer
 			image, logs, err = pack.Build.
 				WithPullPolicy("always").
 				WithBuilder(Builder).
-				WithBuildpacks(
-					config.Procfile,
-				).
+				WithEnv(map[string]string{"BP_NATIVE_IMAGE": "true", "BP_JVM_VERSION": "17", "BP_MAVEN_BUILD_ARGUMENTS": "-Pnative --batch-mode -Dmaven.test.skip=true --no-transfer-progress package", "USE_NATIVE_IMAGE_JAVA_PLATFORM_MODULE_SYSTEM": "false"}).
 				Execute(name, source)
 			Expect(err).ToNot(HaveOccurred(), logs.String)
 
@@ -72,7 +70,11 @@ func testProcfile(t *testing.T, context spec.G, it spec.S) {
 
 			Eventually(container).Should(BeAvailable())
 
-			Expect(logs).To(ContainLines(ContainSubstring("Paketo Buildpack for Procfile")))
+			Expect(logs).To(ContainLines(ContainSubstring("Paketo Buildpack for BellSoft Liberica")))
+			Expect(logs).To(ContainLines(ContainSubstring("Paketo Buildpack for Maven")))
+			Expect(logs).To(ContainLines(ContainSubstring("Paketo Buildpack for Executable JAR")))
+			Expect(logs).To(ContainLines(ContainSubstring("Paketo Buildpack for Spring Boot")))
+			Expect(logs).To(ContainLines(ContainSubstring("Paketo Buildpack for Native Image")))
 		})
 	})
 }
