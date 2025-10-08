@@ -1,0 +1,118 @@
+name: Update test data from samples
+
+on:
+  schedule:
+  - cron: '47 8 * * *' # daily at 08:46 UTC
+  workflow_dispatch: {}
+
+concurrency: test_data_update
+
+env:
+  BUILDERS_FILEPATH: "builders.json"
+
+jobs:
+  build:
+    name: Create PR to sync test data with the samples
+    runs-on: ubuntu-24.04
+    steps:
+
+    - name: Run only if ${{ env.BUILDERS_FILEPATH }} exists
+      run: |
+        if [ ! -f ${{ env.BUILDERS_FILEPATH }} ]; then
+          echo "${{ env.BUILDERS_FILEPATH }} not found, exiting"
+          exit 1
+        fi
+
+    - name: Checkout
+      uses: actions/checkout@v5
+      with:
+        token: ${{ secrets.PAKETO_BOT_GITHUB_TOKEN }}
+
+    - name: Checkout github-config
+      uses: actions/checkout@v5
+      with:
+        repository: paketo-buildpacks/samples
+        path: samples
+
+    - name: Checkout Branch
+      uses: paketo-buildpacks/github-config/actions/pull-request/checkout-branch@main
+      with:
+        branch: automation/testdata/update
+
+    - name: Run the sync action
+      run: |
+        builders=$(jq -c '.builders' ${{ env.BUILDERS_FILEPATH }})
+        for builder in $builders; do
+            test_data=$(echo $builder | jq -c '.test_data // []' | jq -c '.[]')
+            echo "HELLO"
+            for td in $test_data; do
+                sample_dir=$(echo $td | jq -r '.sample_dir // empty')
+                if [ -z "$sample_dir" ]; then
+                  echo "sample_dir can not be empty"
+                  exit 1
+                fi
+
+                test_dir=$(echo $td | jq -r '.test_dir // empty')
+                if [ -z "$test_dir" ]; then
+                  echo "test_dir can not be empty"
+                  exit 1
+                fi
+
+                echo
+                echo "syncing $sample_dir to $test_dir"
+                echo
+
+                args+=("-av" "samples/$sample_dir/" "$test_dir/")
+
+                rsync ${args[*]}
+
+                echo
+                echo "sync complete"
+                echo
+            done
+        done
+
+    - name: Cleanup
+      run: rm -rf samples
+
+    - name: Commit
+      id: commit
+      uses: paketo-buildpacks/github-config/actions/pull-request/create-commit@main
+      with:
+        message: "Updating github-config"
+        pathspec: "."
+        keyid: ${{ secrets.PAKETO_BOT_GPG_SIGNING_KEY_ID }}
+        key: ${{ secrets.PAKETO_BOT_GPG_SIGNING_KEY }}
+
+    - name: Push Branch
+      if: ${{ steps.commit.outputs.commit_sha != '' }}
+      uses: paketo-buildpacks/github-config/actions/pull-request/push-branch@main
+      with:
+        branch: automation/testdata/update
+
+    - name: Open Pull Request
+      if: ${{ steps.commit.outputs.commit_sha != '' }}
+      uses: paketo-buildpacks/github-config/actions/pull-request/open@main
+      with:
+        token: ${{ secrets.PAKETO_BOT_GITHUB_TOKEN }}
+        title: "Updates github-config"
+        branch: automation/testdata/update
+
+  failure:
+    name: Alert on Failure
+    runs-on: ubuntu-24.04
+    needs: [build]
+    if: ${{ always() && needs.build.result == 'failure' }}
+    steps:
+    - name: File Failure Alert Issue
+      uses: paketo-buildpacks/github-config/actions/issue/file@main
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        repo: ${{ github.repository }}
+        label: "failure:update-github-config"
+        comment_if_exists: true
+        issue_title: "Failure: Update GitHub config workflow"
+        issue_body: |
+          Update GitHub config workflow [failed](https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}).
+        comment_body: |
+           Another failure occurred: https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
