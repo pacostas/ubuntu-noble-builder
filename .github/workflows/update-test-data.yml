@@ -44,6 +44,10 @@ jobs:
       with:
         branch: automation/testdata/update
 
+    - name: debug
+      run: |
+        pwd
+        ls -l ./builders/builder/smoke/testdata/procfile
     - name: Run the sync action
       if: ${{ steps.builder_file_exists.outputs.exists == 'true' }}
       run: |
@@ -93,6 +97,12 @@ jobs:
         keyid: ${{ secrets.PAKETO_BOT_GPG_SIGNING_KEY_ID }}
         key: ${{ secrets.PAKETO_BOT_GPG_SIGNING_KEY }}
 
+    - name: debug
+      run: |
+        pwd
+        ls -l ./builders/builder/smoke/testdata/procfile
+        echo "commit=${{ steps.commit.outputs.commit_sha }}"
+        git status --short -- .
     - name: Push Branch
       if: ${{ steps.commit.outputs.commit_sha != '' }}
       uses: paketo-buildpacks/github-config/actions/pull-request/push-branch@main
