@@ -36,13 +36,13 @@ description = "Ubuntu 24.04 Noble Numbat base image with buildpacks for Java."
     id = "paketo-buildpacks/procfile"
     version = "5.11.3"
 
-[stack]
-  id = "io.buildpacks.stacks.noble"
-
 [run]
 
- [[run.images]]
+  [[run.images]]
     image = "docker.io/paketobuildpacks/ubuntu-noble-run:latest"
+
+[stack]
+  id = "io.buildpacks.stacks.noble"
 
 [[targets]]
   arch = "amd64"
