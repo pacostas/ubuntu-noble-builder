@@ -97,7 +97,9 @@ jobs:
 
       - name: List downloaded artifacts
         run: |
-          ls -la artifact-downloads
+          find artifact-downloads -type f -name 'builder.toml' -print
+          ls -laR artifact-downloads
+          tree .
 
       - name: Are there any updates?
         run: |
