@@ -53,24 +53,6 @@ jobs:
         echo "builders=$builders"
         echo "builders=$builders" >> "$GITHUB_OUTPUT"
 
-    - name: Checkout branch
-      uses: paketo-buildpacks/github-config/actions/pull-request/checkout-branch@main
-      with:
-        branch: "automation/builder-toml-update"
-
-    - name: Rebase branch
-      uses: paketo-buildpacks/github-config/actions/pull-request/rebase-branch@main
-      with:
-        keyid: ${{ secrets.PAKETO_BOT_GPG_SIGNING_KEY_ID }}
-        key: ${{ secrets.PAKETO_BOT_GPG_SIGNING_KEY }}
-        fail_on_rebase_failure: true
-
-    - name: Git push
-      uses: paketo-buildpacks/github-config/actions/pull-request/push-branch@main
-      with:
-        branch: "automation/builder-toml-update"
-        force: true
-
   update:
     name: Update builder.toml
     runs-on: ubuntu-24.04
@@ -84,37 +66,48 @@ jobs:
     - name: Check out
       uses: actions/checkout@v6
 
-
-    - name: Checkout branch
-      uses: paketo-buildpacks/github-config/actions/pull-request/checkout-branch@main
-      with:
-        branch: "automation/builder-toml-update"
-
     - name: Update builder.toml
-      uses: paketo-buildpacks/github-config/actions/builder/update@main
+      uses: pacostas/github-config/actions/builder/update@main
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         filename: "${{ matrix.builders.path }}/builder.toml"
 
-    - name: Git commit
-      id: commit
-      uses: paketo-buildpacks/github-config/actions/pull-request/create-commit@main
+    - name: upload builder.toml
+      uses: actions/upload-artifact@v7
       with:
-        message: "Update ${{ matrix.builders.name }} builder.toml"
-        pathspec: "${{ matrix.builders.path }}/builder.toml"
-        keyid: ${{ secrets.PAKETO_BOT_GPG_SIGNING_KEY_ID }}
-        key: ${{ secrets.PAKETO_BOT_GPG_SIGNING_KEY }}
+        name: builder-toml-${{ matrix.builders.name }}
+        path: "${{ matrix.builders.path }}/builder.toml"
+        if-no-files-found: error
 
-    - name: Git push
-      if: ${{ steps.commit.outputs.commit_sha != '' }}
-      uses: paketo-buildpacks/github-config/actions/pull-request/push-branch@main
-      with:
-        branch: "automation/builder-toml-update"
+  check_if_updates:
+    name: Check if builder.toml files have any updates
+    runs-on: ubuntu-24.04
+    needs: [preparation, update]
+    outputs:
+      updates: ${{ steps.compare.outputs.updates }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
 
-  open-pull-request:
+      - name: Download builder.toml artifacts for each builder
+        uses: actions/download-artifact@v7
+        with:
+          path: artifact-downloads
+          pattern: builder-toml-*
+
+      - name: List downloaded artifacts
+        run: |
+          ls -la artifact-downloads
+
+      - name: Are there any updates?
+        run: |
+          echo "updates=false" >> "$GITHUB_OUTPUT"
+
+  open_pull_request:
+    if: ${{ needs.check_if_updates.outputs.updates == 'true' }}
     name: Open pull request
     runs-on: ubuntu-24.04
-    needs: update
+    needs: [check_if_updates, update]
     steps:
     - name: Check out
       uses: actions/checkout@v6
@@ -134,8 +127,8 @@ jobs:
   failure:
     name: Alert on Failure
     runs-on: ubuntu-24.04
-    needs: [update, open-pull-request]
-    if: ${{ always() && ( needs.update.result == 'failure' || needs.open-pull-request.result == 'failure' ) }}
+    needs: [update, check_if_updates, open_pull_request]
+    if: ${{ always() && ( needs.update.result == 'failure' || needs.check_if_updates.result == 'failure' || needs.open_pull_request.result == 'failure' ) }}
     steps:
     - name: File Failure Alert Issue
       uses: paketo-buildpacks/github-config/actions/issue/file@main
